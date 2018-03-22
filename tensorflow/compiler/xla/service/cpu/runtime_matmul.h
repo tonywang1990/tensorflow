@@ -18,6 +18,10 @@ limitations under the License.
 
 #include "tensorflow/core/platform/types.h"
 
+#ifdef INTEL_MKL
+#include "mkl_cblas.h"
+#endif // INTEL_MKL
+
 extern "C" {
 
 // Performs a multi-threaded matrix multiplication using Eigen. 'lhs' and 'rhs'

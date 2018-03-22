@@ -22,6 +22,7 @@ limitations under the License.
 #include "tensorflow/compiler/xla/service/cpu/runtime_matvec.h"
 #include "tensorflow/core/platform/types.h"
 
+
 using tensorflow::int32;
 using tensorflow::int64;
 
@@ -66,6 +67,7 @@ void MatMul(const void* run_options_ptr, T* out, T* lhs, T* rhs, int64 m,
 template <typename T>
 void MatMulImpl(const void* run_options_ptr, T* out, T* lhs, T* rhs, int64 m,
                 int64 n, int64 k, int32 transpose_lhs, int32 transpose_rhs) {
+
   if (m == 1 || n == 1) {
     // Despite being single threaded, this version of matrix * vector is faster.
     xla::EigenMatVec<T>(out, lhs, rhs, m, n, k, transpose_lhs, transpose_rhs);
@@ -82,6 +84,7 @@ void __xla_cpu_runtime_EigenMatMulF16(const void* run_options_ptr,
                                       Eigen::half* rhs, int64 m, int64 n,
                                       int64 k, int32 transpose_lhs,
                                       int32 transpose_rhs) {
+  // no equivalent operation in MKL
   MatMulImpl<Eigen::half>(run_options_ptr, out, lhs, rhs, m, n, k,
                           transpose_lhs, transpose_rhs);
 }
@@ -90,14 +93,55 @@ void __xla_cpu_runtime_EigenMatMulF32(const void* run_options_ptr, float* out,
                                       float* lhs, float* rhs, int64 m, int64 n,
                                       int64 k, int32 transpose_lhs,
                                       int32 transpose_rhs) {
+
+#if defined(INTEL_MKL)
+  // new MKL implementation
+  // setting params according to the template: core/kernels/mkl_matmul_op.cc
+  const float alpha = 1.0f;
+  const float beta = 0.0f;
+  // pointer to matrix data
+  float *a = lhs, *b = rhs, *c = out;
+  // transa, transb: is a and b transposed?
+  bool transa = transpose_lhs, transb = transpose_rhs;
+  // lda, ldb, ldc: leading dimension of matrix a, b and c
+  int lda = transa ? k : m, ldb = transb ? n : k, ldc = m;
+
+  // equivalent to single precision in MKL
+  assert(0);
+  cblas_sgemm(CblasColMajor, transa ? CblasTrans : CblasNoTrans,
+              transb ? CblasTrans : CblasNoTrans, m, n, k, alpha, a, lda, b,
+              ldb, beta, c, ldc);
+#else
+  // original Eigen implementation
   MatMulImpl<float>(run_options_ptr, out, lhs, rhs, m, n, k, transpose_lhs,
                     transpose_rhs);
+#endif //INTEL_MKL
 }
 
 void __xla_cpu_runtime_EigenMatMulF64(const void* run_options_ptr, double* out,
                                       double* lhs, double* rhs, int64 m,
                                       int64 n, int64 k, int32 transpose_lhs,
                                       int32 transpose_rhs) {
+#if defined(INTEL_MKL)
+  // new MKL implementation
+  // setting params according to the template: core/kernels/mkl_matmul_op.cc
+  const double alpha = 1.0f;
+  const double beta = 0.0f;
+  // pointer to matrix data
+  double *a = lhs, *b = rhs, *c = out;
+  // transa, transb: is a and b transposed?
+  bool transa = transpose_lhs, transb = transpose_rhs;
+  // lda, ldb, ldc: leading dimension of matrix a, b and c
+  int lda = transa ? k : m, ldb = transb ? n : k, ldc = m;
+
+  // equivalent to double precision in MKL
+  cblas_dgemm(CblasColMajor, transa ? CblasTrans : CblasNoTrans,
+              transb ? CblasTrans : CblasNoTrans, m, n, k, alpha, a, lda, b,
+              ldb, beta, c, ldc);
+#else
+  // original Eigen implementation
   MatMulImpl<double>(run_options_ptr, out, lhs, rhs, m, n, k, transpose_lhs,
                      transpose_rhs);
+#endif //INTEL_MKL
+
 }
