@@ -18,6 +18,10 @@ limitations under the License.
 #include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
 #include "tensorflow/core/kernels/eigen_spatial_convolutions.h"
 #include "tensorflow/core/platform/types.h"
+//#ifdef INTEL_MKL
+#include "mkldnn.hpp"
+//#endif // INTEL_MKL
+using namespace mkldnn;
 
 // 'tensorflow' namespace is used so that int64 and other types don't require
 // qualification.
@@ -80,6 +84,97 @@ void EigenConvImpl(const EigenDevice& device, ScalarType* out, ScalarType* lhs,
           .reshape(pre_contract_dims)
           .contract(kernel.reshape(kernel_dims), contract_dims)
           .reshape(post_contract_dims);
+}
+
+
+template <typename EigenDevice, typename ScalarType>
+void MKLConvImpl(const EigenDevice& device, ScalarType* out, ScalarType* lhs,
+                   ScalarType* rhs, int64 input_batch, int64 input_rows,
+                   int64 input_cols, int64 input_channels, int64 kernel_rows,
+                   int64 kernel_cols, int64 kernel_channels,
+                   int64 kernel_filters, int64 output_rows, int64 output_cols,
+                   int64 row_stride, int64 col_stride, int64 padding_top,
+                   int64 padding_bottom, int64 padding_left,
+                   int64 padding_right, int64 lhs_row_dilation,
+                   int64 lhs_col_dilation, int64 rhs_row_dilation,
+                   int64 rhs_col_dilation) {
+  // TODO: what device to use?
+  auto cpu_engine = engine(engine::cpu, 0);
+
+  /* Create a vector primitive to hold the network. For efficienty purpose,
+   * weights are stored in a separate net to perform reordering only once. */
+  std::vector<primitive> net;
+  std::vector<primitive> net_weights;
+
+  // Input data is in NHWC format, kernel data is in HWIO format.
+  // TODO: is Height == rows, Width == cols?
+  memory::dims conv1_src_tz = { input_batch, input_channels, input_rows, input_cols };
+  memory::dims conv1_weights_tz = { kernel_rows, kernel_cols, kernel_channels, kernel_filters };
+  /* Output batch size is equal to input batch size.*/
+  memory::dims conv1_dst_tz = { input_batch, kernel_filters, output_rows, output_cols};
+  memory::dims conv1_strides = { row_stride, col_stride };
+  /* padding TODO: add padding top and bottom? */
+  memory::dims conv1_padding_l = { padding_left };
+  memory::dims conv1_padding_r = { padding_right };
+  /* dilation */
+  memory::dims conv1_dilates = {lhs_row_dilation, rhs_col_dilation};
+
+  /* create memory for user data */
+  auto user_src_memory
+      = memory({ { { conv1_src_tz }, memory::data_type::f32,
+        memory::format::nhwc },
+          cpu_engine },
+          lhs);
+  auto user_weights_memory
+      = memory({ { { conv1_weights_tz }, memory::data_type::f32,
+        memory::format::hwio },
+          cpu_engine },
+          rhs);
+  /* create memory descriptors for convolution data w/ no specified format*/
+  auto conv1_src_md = memory::desc(
+      { conv1_src_tz }, memory::data_type::f32, memory::format::any);
+  auto conv1_weights_md = memory::desc(
+      { conv1_weights_tz }, memory::data_type::f32, memory::format::any);
+  auto conv1_dst_md = memory::desc(
+      { conv1_dst_tz }, memory::data_type::f32, memory::format::any);
+
+  /* create a convolution */
+  auto conv1_desc = convolution_forward::desc(
+      prop_kind::forward_inference, convolution_direct, conv1_src_md,
+      conv1_weights_md, conv1_dst_md, conv1_strides, conv1_dilates,
+      conv1_padding_l, conv1_padding_r, padding_kind::zero);
+  auto conv1_prim_desc
+      = convolution_forward::primitive_desc(conv1_desc, cpu_engine);
+
+  /* create reorders for data and weights if layout requested by
+   * convolution is different from NCHW/OIHW */
+  auto conv1_src_memory = user_src_memory;
+  if (memory::primitive_desc(conv1_prim_desc.src_primitive_desc())
+      != user_src_memory.get_primitive_desc()) {
+    conv1_src_memory = memory(conv1_prim_desc.src_primitive_desc());
+    net.push_back(reorder(user_src_memory, conv1_src_memory));
+  }
+
+  auto conv1_weights_memory = user_weights_memory;
+  if (memory::primitive_desc(conv1_prim_desc.weights_primitive_desc())
+      != user_weights_memory.get_primitive_desc()) {
+    conv1_weights_memory
+        = memory(conv1_prim_desc.weights_primitive_desc());
+    net_weights.push_back(
+        reorder(user_weights_memory, conv1_weights_memory));
+  }
+
+  auto conv1_dst_memory = memory(conv1_prim_desc.dst_primitive_desc());
+
+  /* create convolution primitive and add it to net */
+  net.push_back(convolution_forward(conv1_prim_desc, conv1_src_memory,
+                                    conv1_weights_memory,
+                                    conv1_dst_memory));
+  /* Weight transformation - executed once */
+  stream(stream::kind::eager).submit(net_weights).wait();
+  /* Execute the topology */
+  stream(stream::kind::eager).submit(net).wait();
+
 }
 
 }  // namespace xla

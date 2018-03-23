@@ -496,7 +496,10 @@ cc_library(
         "//tensorflow/core:framework_lite",
         "//tensorflow/core/kernels:eigen_helpers",
         "//third_party/eigen3",
-    ],
+        ] + if_mkl([
+        "//third_party/mkl:intel_binary_blob",
+        "@mkl_dnn",
+        ]),
 )
 
 cc_library(
