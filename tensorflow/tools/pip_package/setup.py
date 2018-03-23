@@ -29,7 +29,7 @@ from setuptools.dist import Distribution
 # This version string is semver compatible, but incompatible with pip.
 # For pip, we will remove all '-' characters from this string, and use the
 # result for pip.
-_VERSION = '1.6.0'
+_VERSION = '1.7.0-rc1'
 
 REQUIRED_PACKAGES = [
     'absl-py >= 0.1.6',
@@ -200,8 +200,7 @@ headers = (list(find_files('*.h', 'tensorflow/core')) +
            list(find_files('*.h', 'tensorflow/stream_executor')) +
            list(find_files('*.h', 'google/protobuf_archive/src')) +
            list(find_files('*', 'third_party/eigen3')) +
-           list(find_files('*', 'external/eigen_archive')) +
-           list(find_files('*.h', 'external/nsync/public')))
+           list(find_files('*', 'external/eigen_archive')))
 
 setup(
     name=project_name,

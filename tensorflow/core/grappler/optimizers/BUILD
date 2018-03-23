@@ -1,9 +1,15 @@
 licenses(["notice"])  # Apache 2.0
 
 load("//tensorflow:tensorflow.bzl", "tf_cc_test")
-load("//tensorflow:tensorflow.bzl", "tf_cc_test_gpu")
+load("//tensorflow:tensorflow.bzl", "tf_cuda_cc_test")
 load("//tensorflow:tensorflow.bzl", "tf_kernel_library")
 load("@local_config_cuda//cuda:build_defs.bzl", "if_cuda")
+
+# Platform specific build config
+load(
+    "//tensorflow/core:platform/default/build_config.bzl",
+    "tf_protos_grappler",
+)
 
 filegroup(
     name = "all_files",
@@ -38,7 +44,7 @@ cc_library(
     ],
 )
 
-tf_cc_test(
+tf_cuda_cc_test(
     name = "static_schedule_test",
     srcs = ["static_schedule_test.cc"],
     deps = [
@@ -73,7 +79,7 @@ cc_library(
     ],
 )
 
-tf_cc_test(
+tf_cuda_cc_test(
     name = "auto_parallel_test",
     srcs = ["auto_parallel_test.cc"],
     deps = [
@@ -141,6 +147,8 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":graph_optimizer",
+        "//tensorflow/core:core_cpu_base",
+        "//tensorflow/core:framework",
         "//tensorflow/core:protos_all_cc",
         "//tensorflow/core/grappler:grappler_item",
         "//tensorflow/core/grappler:op_types",
@@ -149,13 +157,14 @@ cc_library(
     ],
 )
 
-tf_cc_test(
+tf_cuda_cc_test(
     name = "function_optimizer_test",
     srcs = ["function_optimizer_test.cc"],
     deps = [
         ":function_optimizer",
         "//tensorflow/cc:cc_ops",
         "//tensorflow/cc:cc_ops_internal",
+        "//tensorflow/cc:functional_ops",
         "//tensorflow/core:all_kernels",
         "//tensorflow/core:core_cpu",
         "//tensorflow/core:core_cpu_internal",
@@ -200,6 +209,37 @@ cc_library(
 )
 
 cc_library(
+    name = "graph_optimizer_stage",
+    srcs = ["graph_optimizer_stage.cc"],
+    hdrs = ["graph_optimizer_stage.h"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//tensorflow/core:lib",
+        "//tensorflow/core:lib_internal",
+        "//tensorflow/core/grappler:grappler_item",
+        "//tensorflow/core/grappler:utils",
+        "//tensorflow/core/grappler/costs:graph_properties",
+        "//tensorflow/core/grappler/utils:frame",
+    ],
+)
+
+tf_cuda_cc_test(
+    name = "graph_optimizer_stage_test",
+    size = "small",
+    srcs = ["graph_optimizer_stage_test.cc"],
+    deps = [
+        ":graph_optimizer_stage",
+        "//tensorflow/cc:cc_ops",
+        "//tensorflow/core:test",
+        "//tensorflow/core:test_main",
+        "//tensorflow/core/grappler:grappler_item",
+        "//tensorflow/core/grappler:utils",
+        "//tensorflow/core/grappler/costs:graph_properties",
+        "//tensorflow/core/grappler/utils:grappler_test",
+    ],
+)
+
+cc_library(
     name = "custom_graph_optimizer",
     hdrs = [
         "custom_graph_optimizer.h",
@@ -221,6 +261,7 @@ cc_library(
     deps = [
         ":constant_folding",
         ":graph_optimizer",
+        ":graph_optimizer_stage",
         "//tensorflow/core:framework",
         "//tensorflow/core:lib",
         "//tensorflow/core:lib_internal",
@@ -233,7 +274,7 @@ cc_library(
     ],
 )
 
-tf_cc_test(
+tf_cuda_cc_test(
     name = "arithmetic_optimizer_test",
     size = "small",
     srcs = ["arithmetic_optimizer_test.cc"],
@@ -274,7 +315,7 @@ cc_library(
     ],
 )
 
-tf_cc_test(
+tf_cuda_cc_test(
     name = "dependency_optimizer_test",
     size = "small",
     srcs = ["dependency_optimizer_test.cc"],
@@ -310,7 +351,7 @@ cc_library(
     ],
 )
 
-tf_cc_test(
+tf_cuda_cc_test(
     name = "model_pruner_test",
     srcs = ["model_pruner_test.cc"],
     deps = [
@@ -381,10 +422,10 @@ cc_library(
     ]),
 )
 
-tf_cc_test_gpu(
+tf_cuda_cc_test(
     name = "memory_optimizer_test",
     srcs = ["memory_optimizer_test.cc"],
-    tags = ["no_cuda_on_cpu_tap"],
+    tags = ["no_cuda_on_cpu_tap"],  # Do not re-enable again without actually testing.
     deps = [
         ":memory_optimizer",
         "//tensorflow/cc:cc_ops",
@@ -423,7 +464,7 @@ cc_library(
     ],
 )
 
-tf_cc_test(
+tf_cuda_cc_test(
     name = "layout_optimizer_test",
     srcs = ["layout_optimizer_test.cc"],
     deps = [
@@ -472,7 +513,7 @@ cc_library(
     ],
 )
 
-tf_cc_test(
+tf_cuda_cc_test(
     name = "meta_optimizer_test",
     srcs = ["meta_optimizer_test.cc"],
     deps = [
@@ -501,7 +542,7 @@ cc_library(
     ],
 )
 
-tf_cc_test(
+tf_cuda_cc_test(
     name = "custom_graph_optimizer_registry_test",
     size = "small",
     srcs = ["custom_graph_optimizer_registry_test.cc"],
@@ -536,15 +577,9 @@ cc_library(
     ],
 )
 
-tf_cc_test(
+tf_cuda_cc_test(
     name = "loop_optimizer_test",
-    size = "small",
     srcs = ["loop_optimizer_test.cc"],
-    tags = [
-        "manual",
-        "no_oss",  # b/74111495
-        "notap",
-    ],
     deps = [
         ":loop_optimizer",
         "//tensorflow/cc:cc_ops",
@@ -554,5 +589,30 @@ tf_cc_test(
         "//tensorflow/core/grappler:grappler_item",
         "//tensorflow/core/grappler:utils",
         "//tensorflow/core/grappler/inputs:trivial_test_graph_input_yielder",
+        "//tensorflow/core/grappler/utils:grappler_test",
+    ],
+)
+
+cc_library(
+    name = "symbolic_shapes",
+    srcs = ["symbolic_shapes.cc"],
+    hdrs = ["symbolic_shapes.h"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//tensorflow/core:framework",
+        "//tensorflow/core:protos_all_cc",
+    ] + tf_protos_grappler(),
+)
+
+tf_cc_test(
+    name = "symbolic_shapes_test",
+    srcs = ["symbolic_shapes_test.cc"],
+    deps = [
+        ":symbolic_shapes",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:lib",
+        "//tensorflow/core:protos_all_cc",
+        "//tensorflow/core:test",
+        "//tensorflow/core:test_main",
     ],
 )

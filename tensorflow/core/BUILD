@@ -313,6 +313,7 @@ cc_library(
         "lib/gtl/optional.h",
         "lib/gtl/priority_queue_util.h",
         "lib/hash/crc32c.h",
+        "lib/hash/hash.h",
         "lib/histogram/histogram.h",
         "lib/io/buffered_inputstream.h",
         "lib/io/compression.h",
@@ -593,6 +594,7 @@ cc_library(
         "platform/prefetch.h",
         "platform/thread_annotations.h",
         "platform/types.h",
+        "platform/cpu_info.h",
     ] + if_windows(["platform/windows/integral_types.h"]),
     visibility = ["//visibility:public"],
     deps =
@@ -632,6 +634,7 @@ tf_gen_op_libs(
         "random_ops",
         "remote_fused_graph_ops",
         "resource_variable_ops",
+        "scoped_allocator_ops",
         "sdca_ops",
         "set_ops",
         "script_ops",
@@ -686,6 +689,34 @@ cc_library(
 )
 
 cc_library(
+    name = "cudnn_rnn_ops",
+    srcs = [
+        "ops/cudnn_rnn_ops.cc",
+    ],
+    linkstatic = 1,
+    visibility = ["//tensorflow:internal"],
+    deps = [
+        "//tensorflow/core:framework",
+        "//tensorflow/core:lib",
+        "//tensorflow/core:lib_internal",
+        "//tensorflow/core:stream_executor",
+        "//tensorflow/core/kernels:bounds_check_lib",
+        "//third_party/eigen3",
+        "@farmhash_archive//:farmhash",
+    ],
+    alwayslink = 1,
+)
+
+tf_gen_op_libs(
+    op_lib_names = [
+        "cudnn_rnn_ops",
+    ],
+    deps = [
+        ":lib",
+    ],
+)
+
+cc_library(
     name = "ops",
     visibility = ["//visibility:public"],
     deps = [
@@ -697,6 +728,7 @@ cc_library(
         ":checkpoint_ops_op_lib",
         ":control_flow_ops_op_lib",
         ":ctc_ops_op_lib",
+        ":cudnn_rnn_ops_op_lib",
         ":data_flow_ops_op_lib",
         ":dataset_ops_op_lib",
         ":function_ops_op_lib",
@@ -715,11 +747,13 @@ cc_library(
         ":random_ops_op_lib",
         ":remote_fused_graph_ops_op_lib",
         ":resource_variable_ops_op_lib",
+        ":scoped_allocator_ops_op_lib",
         ":script_ops_op_lib",
         ":sdca_ops_op_lib",
         ":sendrecv_ops_op_lib",
         ":set_ops_op_lib",
         ":sparse_ops_op_lib",
+        ":summary_ops_op_lib",
         ":spectral_ops_op_lib",
         ":state_ops_op_lib",
         ":stateless_random_ops_op_lib",
@@ -835,6 +869,7 @@ cc_library(
         "//tensorflow/core/kernels:checkpoint_ops",
         "//tensorflow/core/kernels:control_flow_ops",
         "//tensorflow/core/kernels:ctc_ops",
+        "//tensorflow/core/kernels:cudnn_rnn_kernels",
         "//tensorflow/core/kernels:data_flow",
         "//tensorflow/core/kernels:dataset_ops",
         "//tensorflow/core/kernels:fake_quant_ops",
@@ -858,6 +893,7 @@ cc_library(
         "//tensorflow/core/kernels:remote_fused_graph_ops",
         "//tensorflow/core/kernels:required",
         "//tensorflow/core/kernels:resource_variable_ops",
+        "//tensorflow/core/kernels:scoped_allocator_ops",
         "//tensorflow/core/kernels:sdca_ops",
         "//tensorflow/core/kernels:set_kernels",
         "//tensorflow/core/kernels:sparse",
@@ -1034,6 +1070,7 @@ filegroup(
             "util/tensor_bundle/*.h",
             "util/tensor_bundle/*.cc",
             "common_runtime/gpu/**/*",
+            "common_runtime/eager/*",
             "common_runtime/gpu_device_factory.*",
         ],
     ),
@@ -1059,6 +1096,7 @@ filegroup(
             "**/*testlib*",
             "**/*main.cc",
             "common_runtime/gpu/**/*",
+            "common_runtime/eager/*",
             "common_runtime/gpu_device_factory.*",
             "graph/dot.*",
         ],
@@ -1403,6 +1441,13 @@ tf_pyclif_proto_library(
 )
 
 tf_pyclif_proto_library(
+    name = "protobuf/device_properties_pyclif",
+    proto_lib = ":protos_all_cc",
+    proto_srcfile = "protobuf/device_properties.proto",
+    visibility = ["//visibility:public"],
+)
+
+tf_pyclif_proto_library(
     name = "protobuf/meta_graph_pyclif",
     proto_lib = ":protos_all_cc",
     proto_srcfile = "protobuf/meta_graph.proto",
@@ -1410,9 +1455,9 @@ tf_pyclif_proto_library(
 )
 
 tf_pyclif_proto_library(
-    name = "protobuf/device_properties_pyclif",
+    name = "protobuf/saved_model_pyclif",
     proto_lib = ":protos_all_cc",
-    proto_srcfile = "protobuf/device_properties.proto",
+    proto_srcfile = "protobuf/saved_model.proto",
     visibility = ["//visibility:public"],
 )
 
@@ -1958,7 +2003,6 @@ cc_header_only_library(
     deps = [
         ":framework",
         ":reader_base",
-        "@nsync//:nsync_headers",
     ],
 )
 
@@ -2065,10 +2109,13 @@ tf_cuda_library(
 
 CORE_CPU_BASE_HDRS = GRAPH_HDRS + [
     "common_runtime/device.h",
+    "common_runtime/device_mgr.h",
     "common_runtime/eval_const_tensor.h",
     "common_runtime/graph_runner.h",
     "common_runtime/shape_refiner.h",
     "framework/versions.h",
+    "common_runtime/process_function_library_runtime.h",
+    "common_runtime/function.h",
 ]
 
 tf_cuda_library(
@@ -2115,24 +2162,23 @@ CORE_CPU_LIB_HEADERS = CORE_CPU_BASE_HDRS + [
     "common_runtime/costmodel_manager.h",
     "common_runtime/debugger_state_interface.h",
     "common_runtime/device_factory.h",
-    "common_runtime/device_mgr.h",
     "common_runtime/device_set.h",
     "common_runtime/dma_helper.h",
     "common_runtime/eigen_thread_pool.h",
     "common_runtime/executor.h",
-    "common_runtime/function.h",
     "common_runtime/graph_optimizer.h",
     "common_runtime/local_device.h",
     "common_runtime/memory_types.h",
     "common_runtime/mkl_cpu_allocator.h",
     "common_runtime/optimization_registry.h",
     "common_runtime/pending_counts.h",
-    "common_runtime/process_function_library_runtime.h",
     "common_runtime/process_util.h",
     "common_runtime/profile_handler.h",
     "common_runtime/renamed_device.h",
     "common_runtime/rendezvous_mgr.h",
     "common_runtime/rendezvous_util.h",
+    "common_runtime/scoped_allocator.h",
+    "common_runtime/scoped_allocator_mgr.h",
     "common_runtime/session_factory.h",
     "common_runtime/placer.h",
     "common_runtime/stats_publisher_interface.h",
@@ -2172,6 +2218,8 @@ tf_cuda_library(
         "common_runtime/renamed_device.cc",
         "common_runtime/rendezvous_mgr.cc",
         "common_runtime/rendezvous_util.cc",
+        "common_runtime/scoped_allocator.cc",
+        "common_runtime/scoped_allocator_mgr.cc",
         "common_runtime/session.cc",
         "common_runtime/session_factory.cc",
         "common_runtime/session_options.cc",
@@ -2896,6 +2944,23 @@ tf_cc_tests(
     ],
 )
 
+tf_cc_test(
+    name = "cudnn_rnn_ops_test_cc",
+    size = "small",
+    srcs = [
+        "ops/cudnn_rnn_ops_test.cc",
+    ],
+    deps = [
+        ":cudnn_rnn_ops",
+        "//tensorflow/core",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:lib",
+        "//tensorflow/core:test",
+        "//tensorflow/core:test_main",
+        "//tensorflow/core:testlib",
+    ],
+)
+
 tf_cc_test_mkl(
     name = "mkl_runtime_tests",
     size = "small",
@@ -3385,6 +3450,21 @@ tf_cc_test(
         "//tensorflow/core/kernels:random_ops",
         "//tensorflow/core/kernels:shape_ops",
         "//third_party/eigen3",
+    ],
+)
+
+tf_cc_test(
+    name = "common_runtime_scoped_allocator_mgr_test",
+    size = "small",
+    srcs = ["common_runtime/scoped_allocator_mgr_test.cc"],
+    linkstatic = tf_kernel_tests_linkstatic(),
+    deps = [
+        ":core_cpu",
+        ":core_cpu_internal",
+        ":framework",
+        ":lib",
+        ":test",
+        ":test_main",
     ],
 )
 

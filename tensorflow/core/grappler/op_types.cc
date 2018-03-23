@@ -72,6 +72,10 @@ bool IsComplex(const NodeDef& node) { return node.op() == "Complex"; }
 
 bool IsComplexAbs(const NodeDef& node) { return node.op() == "ComplexAbs"; }
 
+bool IsConcat(const NodeDef& node) {
+  return node.op() == "Concat" || node.op() == "ConcatV2";
+}
+
 bool IsConcatOffset(const NodeDef& node) { return node.op() == "ConcatOffset"; }
 
 bool IsConstant(const NodeDef& node) { return node.op() == "Const"; }
@@ -207,6 +211,8 @@ bool IsMirrorPadGrad(const NodeDef& node) {
 bool IsMod(const NodeDef& node) { return node.op() == "Mod"; }
 
 bool IsMul(const NodeDef& node) { return node.op() == "Mul"; }
+
+bool IsNeg(const NodeDef& node) { return node.op() == "Neg"; }
 
 bool IsNoOp(const NodeDef& node) { return node.op() == "NoOp"; }
 

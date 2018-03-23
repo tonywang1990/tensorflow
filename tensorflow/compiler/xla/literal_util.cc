@@ -929,7 +929,7 @@ string Literal::GetAsString(tensorflow::gtl::ArraySlice<int64> multi_index,
     case U64:
       return StrCat(Get<uint64>(multi_index, shape_index));
     case F16:
-      return StrCat(Get<half>(multi_index, shape_index));
+      return StrCat(static_cast<float>(Get<half>(multi_index, shape_index)));
     case F32:
       return StrCat(Get<float>(multi_index, shape_index));
     case BF16:
@@ -979,7 +979,8 @@ string Literal::GetSparseElementAsString(int64 sparse_element_number,
       return StrCat(
           GetSparseElement<uint64>(sparse_element_number, shape_index));
     case F16:
-      return StrCat(GetSparseElement<half>(sparse_element_number, shape_index));
+      return StrCat(static_cast<float>(
+          GetSparseElement<half>(sparse_element_number, shape_index)));
     case F32:
       return StrCat(
           GetSparseElement<float>(sparse_element_number, shape_index));
@@ -1021,6 +1022,36 @@ StatusOr<int64> Literal::GetIntegralAsS64(
           "Array element type is not integral: %s",
           PrimitiveType_Name(shape().element_type()).c_str());
   }
+}
+
+Status Literal::SetIntegralAsS64(tensorflow::gtl::ArraySlice<int64> multi_index,
+                                 int64 value) {
+  CHECK(LayoutUtil::IsDenseArray(shape()));
+  switch (shape().element_type()) {
+    case PRED:
+      Set<bool>(multi_index, value);
+      break;
+    case U8:
+      Set<uint8>(multi_index, value);
+      break;
+    case S32:
+      Set<int32>(multi_index, value);
+      break;
+    case S64:
+      Set<int64>(multi_index, value);
+      break;
+    case U32:
+      Set<uint32>(multi_index, value);
+      break;
+    case U64:
+      Set<uint64>(multi_index, value);
+      break;
+    default:
+      return FailedPrecondition(
+          "Array element type is not integral: %s",
+          PrimitiveType_Name(shape().element_type()).c_str());
+  }
+  return Status::OK();
 }
 
 tensorflow::gtl::ArraySlice<int64> Literal::GetSparseIndex(
@@ -1432,6 +1463,9 @@ StatusOr<std::unique_ptr<Literal>> ConvertIfDestTypeMatches(
 StatusOr<std::unique_ptr<Literal>> Literal::Convert(
     PrimitiveType primitive_dest_type) const {
   TF_RET_CHECK(ShapeUtil::IsArray(shape()));
+  if (shape().element_type() == primitive_dest_type) {
+    return CloneToUnique();
+  }
   switch (shape().element_type()) {
 #define CONVERT_IF_DEST_TYPE_MATCHES(type) \
   case (type):                             \

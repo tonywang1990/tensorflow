@@ -22,16 +22,28 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+from collections import namedtuple
 import types
 
 import gast
 
 from tensorflow.contrib.py2tf.pyct import anno
+from tensorflow.contrib.py2tf.pyct import ast_util
 from tensorflow.contrib.py2tf.pyct import inspect_utils
 from tensorflow.contrib.py2tf.pyct import parser
 from tensorflow.contrib.py2tf.pyct import templates
 from tensorflow.contrib.py2tf.pyct import transformer
 from tensorflow.python.util import tf_inspect
+
+
+class FunctionInfo(namedtuple('FunctionInfo', ('dtype',))):
+  pass
+
+
+# TODO(mdan): Move this to config.py.
+KNOWN_NUMPY_FUNCTIONS = {
+    ('numpy', 'random', 'binomial'): FunctionInfo(dtype='tf.int64'),
+}
 
 
 class FunctionNamer(object):
@@ -179,11 +191,27 @@ class CallTreeTransformer(transformer.Base):
     return node
 
   def _wrap_to_py_func_no_return(self, node):
-    # TODO(mdan): Properly handle varargs, kwargs, etc.
+    # TODO(mdan): Properly handle varargs, etc.
     template = """
-      py2tf_utils.wrap_py_func(func, None, (original_args,), True)
+      py2tf_utils.wrap_py_func(func, None, (args,), kwargs, True)
     """
-    return templates.replace(template, func=node.func, original_args=node.args)
+    return templates.replace(
+        template,
+        func=node.func,
+        args=node.args,
+        kwargs=ast_util.keywords_to_dict(node.keywords))
+
+  def _wrap_to_py_func_single_return(self, node, dtype):
+    # TODO(mdan): Properly handle varargs, etc.
+    template = """
+      py2tf_utils.wrap_py_func(func, dtype, (args,), kwargs, False)
+    """
+    return templates.replace_as_expression(
+        template,
+        func=node.func,
+        dtype=parser.parse_expression(dtype),
+        args=node.args,
+        kwargs=ast_util.keywords_to_dict(node.keywords))
 
   def _insert_dynamic_conversion(self, node):
     """Inlines a dynamic conversion for a dynamic function."""
@@ -204,10 +232,10 @@ class CallTreeTransformer(transformer.Base):
     # Before we could convert all the time though, we'd need a reasonable
     # caching mechanism.
     template = """
-      py2tf_api.converted_call(func, True, False, {}, original_args)
+      py2tf_api.converted_call(func, True, False, {}, args)
     """
     call_expr = templates.replace(
-        template, func=node.func, original_args=node.args)
+        template, func=node.func, args=node.args)
     new_call = call_expr[0].value
     # TODO(mdan): Improve the template mechanism to better support this.
     new_call.keywords = node.keywords
@@ -248,10 +276,19 @@ class CallTreeTransformer(transformer.Base):
     self.generic_visit(node)
     if anno.hasanno(node.func, 'live_val'):
       target_entity = anno.getanno(node.func, 'live_val')
+      if anno.hasanno(node.func, 'fqn'):
+        target_fqn = anno.getanno(node.func, 'fqn')
+      else:
+        target_fqn = None
       if self._function_is_compilable(target_entity):
         node = self._rename_compilable_function(node)
+      elif target_fqn and target_fqn in KNOWN_NUMPY_FUNCTIONS:
+        # TODO(mdan): Should we replace these with equivalent TF ops instead?
+        node = self._wrap_to_py_func_single_return(
+            node, KNOWN_NUMPY_FUNCTIONS[target_fqn].dtype)
       else:
-        raise NotImplementedError('py_func with return values')
+        raise NotImplementedError(
+            'py_func with return values (unknown function)')
     else:
       if self.context.recursive:
         node = self._insert_dynamic_conversion(node)

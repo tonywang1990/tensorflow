@@ -88,6 +88,8 @@ bool IsMatMul(const NodeDef& node);
 bool IsNextIteration(const NodeDef& node);
 bool IsPack(const NodeDef& node);
 bool IsPad(const NodeDef& node);
+bool IsPack(const NodeDef& node);
+bool IsNeg(const NodeDef& node);
 bool IsNoOp(const NodeDef& node);
 bool IsNotEqual(const NodeDef& node);
 bool IsPlaceholder(const NodeDef& node);
