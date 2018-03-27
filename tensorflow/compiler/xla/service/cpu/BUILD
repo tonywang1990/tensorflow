@@ -493,6 +493,7 @@ cc_library(
     copts = runtime_copts(),
     visibility = ["//visibility:public"],
     deps = [
+        "//tensorflow/core:lib",
         "//tensorflow/compiler/xla:executable_run_options",
         "//tensorflow/core:framework_lite",
         "//tensorflow/core/kernels:eigen_helpers",
@@ -558,10 +559,14 @@ cc_library(
     copts = runtime_copts(),
     visibility = ["//visibility:public"],
     deps = [
+        "//tensorflow/core:lib",
         "//tensorflow/core:framework_lite",
         "//tensorflow/core/kernels:eigen_helpers",
         "//third_party/eigen3",
-    ],
+    ] + if_mkl([
+        "//third_party/mkl:intel_binary_blob",
+        "@mkl_dnn",
+    ]),
 )
 
 cc_library(

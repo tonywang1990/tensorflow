@@ -48,10 +48,29 @@ __xla_cpu_runtime_EigenSingleThreadedConvF32(
     int64 row_stride, int64 col_stride, int64 padding_top, int64 padding_bottom,
     int64 padding_left, int64 padding_right, int64 lhs_row_dilation,
     int64 lhs_col_dilation, int64 rhs_row_dilation, int64 rhs_col_dilation) {
+#if defined(INTEL_MKL)
+  if (rhs_row_dilation != 1 || rhs_col_dilation != 1){
+    tensorflow::xla::EigenConvImpl(
+        Eigen::DefaultDevice(), out, lhs, rhs, input_batch, input_rows,
+        input_cols, input_channels, kernel_rows, kernel_cols, kernel_channels,
+        kernel_filters, output_rows, output_cols, row_stride, col_stride,
+        padding_top, padding_bottom, padding_left, padding_right,
+        lhs_row_dilation, lhs_col_dilation, rhs_row_dilation, rhs_col_dilation);
+  }
+  else{
+    tensorflow::xla::MKLConvImpl(
+        Eigen::DefaultDevice(), out, lhs, rhs, input_batch,
+        input_rows, input_cols, input_channels, kernel_rows, kernel_cols,
+        kernel_channels, kernel_filters, output_rows, output_cols, row_stride,
+        col_stride, padding_top, padding_bottom, padding_left, padding_right,
+        lhs_row_dilation, lhs_col_dilation, rhs_row_dilation, rhs_col_dilation);
+  }
+#else
   tensorflow::xla::EigenConvImpl(
       Eigen::DefaultDevice(), out, lhs, rhs, input_batch, input_rows,
       input_cols, input_channels, kernel_rows, kernel_cols, kernel_channels,
       kernel_filters, output_rows, output_cols, row_stride, col_stride,
       padding_top, padding_bottom, padding_left, padding_right,
       lhs_row_dilation, lhs_col_dilation, rhs_row_dilation, rhs_col_dilation);
+#endif // INTEL_MKL
 }

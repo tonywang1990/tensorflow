@@ -107,7 +107,6 @@ void __xla_cpu_runtime_EigenMatMulF32(const void* run_options_ptr, float* out,
   int lda = transa ? k : m, ldb = transb ? n : k, ldc = m;
 
   // equivalent to single precision in MKL
-  assert(0);
   cblas_sgemm(CblasColMajor, transa ? CblasTrans : CblasNoTrans,
               transb ? CblasTrans : CblasNoTrans, m, n, k, alpha, a, lda, b,
               ldb, beta, c, ldc);
